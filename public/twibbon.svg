@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" width="1000" height="1000">
+  <defs>
+    <!-- Background is transparent -->
+    <mask id="hole">
+      <rect width="1000" height="1000" fill="white" />
+      <circle cx="500" cy="500" r="350" fill="black" />
+    </mask>
+  </defs>
+  
+  <rect width="1000" height="1000" fill="#CD8B8E" mask="url(#hole)" />
+  <!-- Frame border -->
+  <circle cx="500" cy="500" r="350" fill="none" stroke="#BA1C22" stroke-width="20" />
+  
+  <!-- Evani Badge -->
+  <g transform="translate(500, 850)">
+    <rect x="-200" y="-50" width="400" height="100" rx="50" fill="#BA1C22" />
+    <text x="0" y="15" font-family="sans-serif" font-size="50" font-weight="bold" fill="#FCF8F8" text-anchor="middle">EVANI COMMUNITY</text>
+  </g>
+
+  <!-- Decorative circles -->
+  <circle cx="150" cy="150" r="50" fill="#BA1C22" />
+  <circle cx="850" cy="150" r="30" fill="#FCF8F8" stroke="#BA1C22" stroke-width="10" />
+  <circle cx="150" cy="850" r="40" fill="#FCF8F8" stroke="#BA1C22" stroke-width="10" />
+</svg>
