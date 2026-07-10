@@ -27,6 +27,30 @@
   let initialPinchDistance: number | null = null;
   let initialScale = 1.0;
 
+  let imgNaturalWidth = 1000;
+  let imgNaturalHeight = 1000;
+
+  // Reactively calculate the base width and height to cover the preview container
+  $: ratio = Math.max(previewWidth / (imgNaturalWidth || 1), previewWidth / (imgNaturalHeight || 1));
+  $: baseW = imgNaturalWidth * ratio;
+  $: baseH = imgNaturalHeight * ratio;
+
+  // Re-clamp offsets when scale or base dimensions change
+  $: if (scale || baseW || baseH) {
+    clampOffsets();
+  }
+
+  function clampOffsets() {
+    if (!editMode) return;
+    const scaledW = baseW * scale;
+    const scaledH = baseH * scale;
+    const maxOffsetX = Math.max(0, (scaledW - previewWidth) / 2);
+    const maxOffsetY = Math.max(0, (scaledH - previewWidth) / 2);
+
+    offsetX = Math.min(Math.max(offsetX, -maxOffsetX), maxOffsetX);
+    offsetY = Math.min(Math.max(offsetY, -maxOffsetY), maxOffsetY);
+  }
+
   function getDistance(touches: TouchList) {
     const dx = touches[0].clientX - touches[1].clientX;
     const dy = touches[0].clientY - touches[1].clientY;
@@ -71,15 +95,7 @@
     ctx.drawImage(videoElement, 0, 0);
     ctx.restore();
     
-    currentImageSrc = canvasElement.toDataURL('image/png');
-    editMode = true;
-    scale = 1.0;
-    offsetX = 0;
-    offsetY = 0;
-    
-    showHint = true;
-    clearTimeout(hintTimeout);
-    hintTimeout = setTimeout(() => { showHint = false; }, 3500);
+    loadImageData(canvasElement.toDataURL('image/png'));
     
     if (stream) {
       stream.getTracks().forEach(track => track.stop());
@@ -95,15 +111,7 @@
     const reader = new FileReader();
     reader.onload = (e) => {
       if (!e.target || typeof e.target.result !== 'string') return;
-      currentImageSrc = e.target.result;
-      editMode = true;
-      scale = 1.0;
-      offsetX = 0;
-      offsetY = 0;
-
-      showHint = true;
-      clearTimeout(hintTimeout);
-      hintTimeout = setTimeout(() => { showHint = false; }, 3500);
+      loadImageData(e.target.result);
     };
     reader.readAsDataURL(file);
     
@@ -113,6 +121,25 @@
     }
     // reset input
     target.value = '';
+  }
+
+  function loadImageData(src: string) {
+    const img = new Image();
+    img.onload = () => {
+      imgNaturalWidth = img.width;
+      imgNaturalHeight = img.height;
+      currentImageSrc = src;
+      
+      scale = 1.0;
+      offsetX = 0;
+      offsetY = 0;
+      editMode = true;
+
+      showHint = true;
+      clearTimeout(hintTimeout);
+      hintTimeout = setTimeout(() => { showHint = false; }, 3500);
+    };
+    img.src = src;
   }
 
   function onPointerDown(e: MouseEvent | TouchEvent) {
@@ -141,7 +168,7 @@
       if (initialPinchDistance) {
         const currentDistance = getDistance(e.touches);
         const newScale = initialScale * (currentDistance / initialPinchDistance);
-        scale = Math.min(Math.max(newScale, 0.5), 5); // clamp scale
+        scale = Math.min(Math.max(newScale, 1.0), 5); // clamp scale
       }
       return;
     }
@@ -153,6 +180,7 @@
       const clientY = 'touches' in e ? e.touches[0].clientY : (e as MouseEvent).clientY;
       offsetX = clientX - startX;
       offsetY = clientY - startY;
+      clampOffsets(); // enforce boundaries during drag
     }
   }
   
@@ -166,7 +194,7 @@
     showHint = false;
     const zoomFactor = -e.deltaY * 0.005;
     const newScale = scale * Math.exp(zoomFactor);
-    scale = Math.min(Math.max(newScale, 0.5), 5);
+    scale = Math.min(Math.max(newScale, 1.0), 5);
   }
 
   function generateFinalImage() {
@@ -178,18 +206,20 @@
     const ctx = canvasElement.getContext('2d');
     if (!ctx) return;
     
+    // Fill white background to prevent any transparency showing as black
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, size, size);
+    
     const img = new Image();
     img.onload = () => {
-      // Calculate drawing dimensions to match the CSS object-fit: cover logic
-      const containerW = previewWidth || 400;
-      
+      // Calculate drawing dimensions exactly as CSS does
       const canvasBaseScale = Math.max(size / img.width, size / img.height);
       const drawWidth = img.width * canvasBaseScale * scale;
       const drawHeight = img.height * canvasBaseScale * scale;
       
       const cx = size / 2;
       const cy = size / 2;
-      const multiplier = size / containerW;
+      const multiplier = size / previewWidth;
       
       const finalX = cx - (drawWidth / 2) + (offsetX * multiplier);
       const finalY = cy - (drawHeight / 2) + (offsetY * multiplier);
@@ -263,7 +293,7 @@
                 src={currentImageSrc} 
                 alt="Edit" 
                 class="edit-image"
-                style="transform: translate({offsetX}px, {offsetY}px) scale({scale});"
+                style="width: {baseW}px; height: {baseH}px; transform: translate({offsetX}px, {offsetY}px) scale({scale});"
               />
             </div>
             <!-- Overlay remains on top, pointer-events-none so touches pass through -->
@@ -325,7 +355,7 @@
               id="zoomSlider" 
               type="range" 
               min="1" 
-              max="4" 
+              max="5" 
               step="0.05" 
               bind:value={scale} 
               class="zoom-slider"
@@ -516,7 +546,8 @@
   .edit-layer:active { cursor: grabbing; }
 
   .edit-image {
-    width: 100%; height: 100%; object-fit: cover;
+    max-width: none;
+    max-height: none;
     pointer-events: none; /* Let the container handle drag events */
     transform-origin: center;
   }
