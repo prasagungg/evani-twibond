@@ -20,6 +20,15 @@
   let startX = 0;
   let startY = 0;
   let previewWidth = 400; // default, will bind to clientWidth
+  
+  let initialPinchDistance: number | null = null;
+  let initialScale = 1.0;
+
+  function getDistance(touches: TouchList) {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
 
   async function startCamera() {
     try {
@@ -97,7 +106,16 @@
 
   function onPointerDown(e: MouseEvent | TouchEvent) {
     if (!editMode) return;
+
+    if ('touches' in e && e.touches.length === 2) {
+      initialPinchDistance = getDistance(e.touches);
+      initialScale = scale;
+      isDragging = false;
+      return;
+    }
+
     isDragging = true;
+    initialPinchDistance = null;
     const clientX = 'touches' in e ? e.touches[0].clientX : (e as MouseEvent).clientX;
     const clientY = 'touches' in e ? e.touches[0].clientY : (e as MouseEvent).clientY;
     startX = clientX - offsetX;
@@ -105,15 +123,37 @@
   }
   
   function onPointerMove(e: MouseEvent | TouchEvent) {
-    if (!isDragging || !editMode) return;
-    const clientX = 'touches' in e ? e.touches[0].clientX : (e as MouseEvent).clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : (e as MouseEvent).clientY;
-    offsetX = clientX - startX;
-    offsetY = clientY - startY;
+    if (!editMode) return;
+
+    if ('touches' in e && e.touches.length === 2) {
+      if (initialPinchDistance) {
+        const currentDistance = getDistance(e.touches);
+        const newScale = initialScale * (currentDistance / initialPinchDistance);
+        scale = Math.min(Math.max(newScale, 0.5), 5); // clamp scale
+      }
+      return;
+    }
+
+    if (!isDragging) return;
+    
+    if (!('touches' in e) || e.touches.length === 1) {
+      const clientX = 'touches' in e ? e.touches[0].clientX : (e as MouseEvent).clientX;
+      const clientY = 'touches' in e ? e.touches[0].clientY : (e as MouseEvent).clientY;
+      offsetX = clientX - startX;
+      offsetY = clientY - startY;
+    }
   }
   
-  function onPointerUp() {
+  function onPointerUp(e: MouseEvent | TouchEvent) {
     isDragging = false;
+    initialPinchDistance = null;
+  }
+
+  function onWheel(e: WheelEvent) {
+    if (!editMode) return;
+    const zoomFactor = -e.deltaY * 0.005;
+    const newScale = scale * Math.exp(zoomFactor);
+    scale = Math.min(Math.max(newScale, 0.5), 5);
   }
 
   function generateFinalImage() {
@@ -204,6 +244,7 @@
               on:touchstart|preventDefault={onPointerDown}
               on:touchmove|preventDefault={onPointerMove}
               on:touchend|preventDefault={onPointerUp}
+              on:wheel|preventDefault={onWheel}
             >
               <img 
                 src={currentImageSrc} 
