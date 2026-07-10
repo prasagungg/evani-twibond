@@ -8,6 +8,7 @@
   let stream: MediaStream | null = null;
   const twibbons = ['/TWIBBONEVANI.png', '/TWIBBONEVANI2.png'];
   let selectedTwibbon = twibbons[0];
+  let fileInput: HTMLInputElement;
 
   async function startCamera() {
     try {
@@ -64,11 +65,10 @@
     ctx.restore();
 
     // Draw the Twibbon overlay
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
-      ctx.drawImage(img, 0, 0, size, size);
-      // Save result as base64 data URL
+    const overlayImg = new Image();
+    overlayImg.crossOrigin = "anonymous";
+    overlayImg.onload = () => {
+      ctx.drawImage(overlayImg, 0, 0, size, size);
       resultImage = canvasElement.toDataURL('image/png');
       
       // Stop the camera since we took the photo
@@ -77,7 +77,7 @@
         cameraActive = false;
       }
     };
-    img.src = selectedTwibbon;
+    overlayImg.src = selectedTwibbon;
   }
   
   function retakePhoto() {
@@ -85,29 +85,61 @@
     startCamera();
   }
 
-  async function shareToSosmed() {
-    if (!resultImage) return;
+  function handleFileUpload(event: Event) {
+    const target = event.target as HTMLInputElement;
+    if (!target.files || target.files.length === 0) return;
     
-    try {
-      // Convert base64 Data URL to Blob
-      const res = await fetch(resultImage);
-      const blob = await res.blob();
-      
-      const file = new File([blob], 'Evani-Twibbon.png', { type: 'image/png' });
-      
-      // Check if Web Share API is supported for files
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          title: 'Evani Twibbon',
-          text: 'Saya mendukung Evani Community!',
-          files: [file]
-        });
-      } else {
-        alert("Browser Anda tidak mendukung fitur bagikan gambar langsung (Web Share API). Silakan 'Download Hasil' dan bagikan secara manual.");
-      }
-    } catch (err) {
-      console.error("Gagal membagikan:", err);
+    const file = target.files[0];
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      if (!e.target || typeof e.target.result !== 'string') return;
+      const img = new Image();
+      img.onload = () => {
+        processUploadedImage(img);
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+    
+    // Stop camera if active
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      cameraActive = false;
     }
+  }
+
+  function processUploadedImage(sourceImg: HTMLImageElement) {
+    if (!canvasElement) return;
+
+    const size = 1000;
+    canvasElement.width = size;
+    canvasElement.height = size;
+    
+    const ctx = canvasElement.getContext('2d');
+    if (!ctx) return;
+
+    // Crop to square
+    const imgAspectRatio = sourceImg.width / sourceImg.height;
+    let sx = 0, sy = 0, sw = sourceImg.width, sh = sourceImg.height;
+    
+    if (imgAspectRatio > 1) {
+      sw = sourceImg.height;
+      sx = (sourceImg.width - sw) / 2;
+    } else if (imgAspectRatio < 1) {
+      sh = sourceImg.width;
+      sy = (sourceImg.height - sh) / 2;
+    }
+    
+    // Draw cropped image (not mirrored)
+    ctx.drawImage(sourceImg, sx, sy, sw, sh, 0, 0, size, size);
+
+    const overlayImg = new Image();
+    overlayImg.crossOrigin = "anonymous";
+    overlayImg.onload = () => {
+      ctx.drawImage(overlayImg, 0, 0, size, size);
+      resultImage = canvasElement.toDataURL('image/png');
+    };
+    overlayImg.src = selectedTwibbon;
   }
 </script>
 
@@ -182,6 +214,9 @@
           <button class="btn-primary main-btn" on:click={startCamera}>
             Nyalakan Kamera
           </button>
+          <button class="btn-outline main-btn" style="margin-top: 8px;" on:click={() => fileInput.click()}>
+            Pilih dari Galeri
+          </button>
         {:else if cameraActive}
           <button class="btn-primary main-btn" on:click={takePhoto}>
             Ambil Foto / Jepret!
@@ -190,9 +225,6 @@
           <a href={resultImage} download="Evani-Twibbon.png" class="btn-primary main-btn download-btn">
             Download Hasil
           </a>
-          <button class="btn-primary main-btn" style="background-color: #2D2D2D; box-shadow: 0 4px 14px rgba(45, 45, 45, 0.3);" on:click={shareToSosmed}>
-            Bagikan ke Sosmed
-          </button>
           <button class="btn-outline main-btn" style="margin-top: 8px;" on:click={retakePhoto}>
             Ulangi Foto
           </button>
@@ -200,6 +232,8 @@
       </div>
     </div>
   </div>
+  
+  <input type="file" accept="image/*" class="hidden" bind:this={fileInput} on:change={handleFileUpload} />
 </main>
 
 <style>
