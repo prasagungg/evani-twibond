@@ -18,6 +18,12 @@
 body {
   font-family: 'Inter', sans-serif;
   background-color: var(--bg-light);
+  background-image: 
+    radial-gradient(at 0% 0%, hsla(358, 70%, 90%, 1) 0, transparent 50%),
+    radial-gradient(at 100% 0%, hsla(350, 40%, 85%, 1) 0, transparent 50%),
+    radial-gradient(at 100% 100%, hsla(355, 50%, 85%, 1) 0, transparent 50%),
+    radial-gradient(at 0% 100%, hsla(350, 20%, 95%, 1) 0, transparent 50%);
+  background-attachment: fixed;
   color: var(--text-dark);
   min-height: 100vh;
   display: flex;

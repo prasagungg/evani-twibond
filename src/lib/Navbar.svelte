@@ -18,8 +18,10 @@
     transform: translateX(-50%);
     width: 90%;
     max-width: 480px; /* Constrain for mobile view */
-    background-color: rgba(255, 255, 255, 0.9);
-    backdrop-filter: blur(10px);
+    background: rgba(255, 255, 255, 0.4);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.5);
     border-radius: var(--radius-pill);
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
     z-index: 1000;

@@ -6,6 +6,8 @@
   let resultImage: string | null = null;
   let cameraActive = false;
   let stream: MediaStream | null = null;
+  const twibbons = ['/TWIBBONEVANI.png', '/TWIBBONEVANI2.png'];
+  let selectedTwibbon = twibbons[0];
 
   async function startCamera() {
     try {
@@ -75,7 +77,7 @@
         cameraActive = false;
       }
     };
-    img.src = '/twibbon.svg';
+    img.src = selectedTwibbon;
   }
   
   function retakePhoto() {
@@ -110,7 +112,7 @@
           
           {#if cameraActive}
             <!-- Overlay shown during live preview -->
-            <img src="/twibbon.svg" alt="Twibbon Overlay" class="overlay" />
+            <img src={selectedTwibbon} alt="Twibbon Overlay" class="overlay" />
           {:else}
             <div class="placeholder-overlay">
               <p>Kamera belum aktif</p>
@@ -136,6 +138,20 @@
 
     <!-- Controls Section -->
     <div class="card">
+      <div class="twibbon-selector">
+        <p class="selector-title">Pilih Bingkai:</p>
+        <div class="selector-options">
+          {#each twibbons as t}
+            <button 
+              class="twibbon-option {selectedTwibbon === t ? 'active' : ''}" 
+              on:click={() => selectedTwibbon = t}
+            >
+              <img src={t} alt="Twibbon Option" />
+            </button>
+          {/each}
+        </div>
+      </div>
+      
       <div class="actions">
         {#if !cameraActive && !resultImage}
           <button class="btn-primary main-btn" on:click={startCamera}>
@@ -223,15 +239,63 @@
     line-height: 1.5;
   }
 
-  /* Card / Controls */
+  /* Card / Controls (Glassmorphism) */
   .card {
-    background: white;
+    background: rgba(255, 255, 255, 0.5);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.6);
     border-radius: var(--radius-box);
     padding: 32px;
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 8px 32px rgba(186, 28, 34, 0.08);
     width: 100%;
     position: relative;
     z-index: 10;
+  }
+
+  /* Twibbon Selector */
+  .twibbon-selector {
+    margin-bottom: 24px;
+    text-align: center;
+  }
+  
+  .selector-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: #666;
+  }
+
+  .selector-options {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+  }
+
+  .twibbon-option {
+    width: 60px;
+    height: 60px;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 3px solid transparent;
+    padding: 0;
+    background: rgba(255, 255, 255, 0.5);
+    transition: transform 0.2s, border-color 0.2s;
+  }
+
+  .twibbon-option img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .twibbon-option.active {
+    border-color: var(--primary-red);
+    transform: scale(1.1);
+  }
+
+  .twibbon-option:hover {
+    transform: scale(1.05);
   }
 
   .actions {
@@ -259,7 +323,6 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: radial-gradient(circle at center, #fde4e5 0%, transparent 70%);
     width: 100%;
     padding: 20px 0;
   }
