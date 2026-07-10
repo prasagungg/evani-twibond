@@ -21,6 +21,9 @@
   let startY = 0;
   let previewWidth = 400; // default, will bind to clientWidth
   
+  let showHint = false;
+  let hintTimeout: ReturnType<typeof setTimeout>;
+  
   let initialPinchDistance: number | null = null;
   let initialScale = 1.0;
 
@@ -74,6 +77,10 @@
     offsetX = 0;
     offsetY = 0;
     
+    showHint = true;
+    clearTimeout(hintTimeout);
+    hintTimeout = setTimeout(() => { showHint = false; }, 3500);
+    
     if (stream) {
       stream.getTracks().forEach(track => track.stop());
       cameraActive = false;
@@ -93,6 +100,10 @@
       scale = 1.0;
       offsetX = 0;
       offsetY = 0;
+
+      showHint = true;
+      clearTimeout(hintTimeout);
+      hintTimeout = setTimeout(() => { showHint = false; }, 3500);
     };
     reader.readAsDataURL(file);
     
@@ -106,6 +117,7 @@
 
   function onPointerDown(e: MouseEvent | TouchEvent) {
     if (!editMode) return;
+    showHint = false;
 
     if ('touches' in e && e.touches.length === 2) {
       initialPinchDistance = getDistance(e.touches);
@@ -151,6 +163,7 @@
 
   function onWheel(e: WheelEvent) {
     if (!editMode) return;
+    showHint = false;
     const zoomFactor = -e.deltaY * 0.005;
     const newScale = scale * Math.exp(zoomFactor);
     scale = Math.min(Math.max(newScale, 0.5), 5);
@@ -255,6 +268,11 @@
             </div>
             <!-- Overlay remains on top, pointer-events-none so touches pass through -->
             <img src={selectedTwibbon} alt="Twibbon Overlay" class="overlay" />
+            
+            <div class="hint-overlay" class:hidden={!showHint}>
+              <span class="hint-icon">👆</span>
+              <p style="margin: 0; font-size: 0.9rem; font-weight: bold; text-align: center;">Geser & Cubit</p>
+            </div>
           
           {:else if cameraActive}
             <img src={selectedTwibbon} alt="Twibbon Overlay" class="overlay" />
@@ -534,5 +552,39 @@
     background: var(--primary-red);
     cursor: pointer;
     box-shadow: 0 2px 6px rgba(186, 28, 34, 0.4);
+  }
+
+  /* Hint Overlay */
+  .hint-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.65);
+    color: white;
+    padding: 16px 24px;
+    border-radius: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 20;
+    transition: opacity 0.5s ease;
+  }
+  
+  .hint-overlay.hidden {
+    opacity: 0;
+  }
+  
+  .hint-icon {
+    font-size: 2rem;
+    margin-bottom: 8px;
+    animation: bounce 1s infinite alternate ease-in-out;
+  }
+  
+  @keyframes bounce {
+    from { transform: translateY(0) scale(1); }
+    to { transform: translateY(-10px) scale(1.1); }
   }
 </style>
