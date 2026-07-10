@@ -9,6 +9,17 @@
   const twibbons = ['/TWIBBONEVANI.png', '/TWIBBONEVANI2.png'];
   let selectedTwibbon = twibbons[0];
   let fileInput: HTMLInputElement;
+  
+  // Editor State
+  let editMode = false;
+  let currentImageSrc: string | null = null;
+  let scale = 1.0;
+  let offsetX = 0;
+  let offsetY = 0;
+  let isDragging = false;
+  let startX = 0;
+  let startY = 0;
+  let previewWidth = 400; // default, will bind to clientWidth
 
   async function startCamera() {
     try {
@@ -16,14 +27,16 @@
         video: { 
           aspectRatio: 1, 
           width: { ideal: 1000 },
-          height: { ideal: 1000 }
+          height: { ideal: 1000 },
+          facingMode: 'user'
         } 
       });
       if (videoElement) {
         videoElement.srcObject = stream;
         videoElement.play();
         cameraActive = true;
-        resultImage = null; // reset if there was a previous photo
+        resultImage = null;
+        editMode = false;
       }
     } catch (err) {
       console.error("Error accessing camera: ", err);
@@ -34,55 +47,28 @@
   function takePhoto() {
     if (!videoElement || !canvasElement) return;
 
-    // Set canvas size to a nice square resolution
-    const size = 1000;
-    canvasElement.width = size;
-    canvasElement.height = size;
-    
+    canvasElement.width = videoElement.videoWidth;
+    canvasElement.height = videoElement.videoHeight;
     const ctx = canvasElement.getContext('2d');
     if (!ctx) return;
-
-    // Draw the video frame to the canvas
-    // We want to crop it to a square in case the stream isn't perfectly square
-    const videoAspectRatio = videoElement.videoWidth / videoElement.videoHeight;
-    let sx = 0, sy = 0, sw = videoElement.videoWidth, sh = videoElement.videoHeight;
     
-    if (videoAspectRatio > 1) {
-      // Landscape video, crop sides
-      sw = videoElement.videoHeight;
-      sx = (videoElement.videoWidth - sw) / 2;
-    } else if (videoAspectRatio < 1) {
-      // Portrait video, crop top/bottom
-      sh = videoElement.videoWidth;
-      sy = (videoElement.videoHeight - sh) / 2;
-    }
-    
-    // Draw cropped video frame (mirrored)
+    // Mirror the capture so the user sees themselves as in a mirror
     ctx.save();
     ctx.scale(-1, 1);
-    ctx.translate(-size, 0);
-    ctx.drawImage(videoElement, sx, sy, sw, sh, 0, 0, size, size);
+    ctx.translate(-canvasElement.width, 0);
+    ctx.drawImage(videoElement, 0, 0);
     ctx.restore();
-
-    // Draw the Twibbon overlay
-    const overlayImg = new Image();
-    overlayImg.crossOrigin = "anonymous";
-    overlayImg.onload = () => {
-      ctx.drawImage(overlayImg, 0, 0, size, size);
-      resultImage = canvasElement.toDataURL('image/png');
-      
-      // Stop the camera since we took the photo
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-        cameraActive = false;
-      }
-    };
-    overlayImg.src = selectedTwibbon;
-  }
-  
-  function retakePhoto() {
-    resultImage = null;
-    startCamera();
+    
+    currentImageSrc = canvasElement.toDataURL('image/png');
+    editMode = true;
+    scale = 1.0;
+    offsetX = 0;
+    offsetY = 0;
+    
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      cameraActive = false;
+    }
   }
 
   function handleFileUpload(event: Event) {
@@ -93,53 +79,89 @@
     const reader = new FileReader();
     reader.onload = (e) => {
       if (!e.target || typeof e.target.result !== 'string') return;
-      const img = new Image();
-      img.onload = () => {
-        processUploadedImage(img);
-      };
-      img.src = e.target.result;
+      currentImageSrc = e.target.result;
+      editMode = true;
+      scale = 1.0;
+      offsetX = 0;
+      offsetY = 0;
     };
     reader.readAsDataURL(file);
     
-    // Stop camera if active
     if (stream) {
       stream.getTracks().forEach(track => track.stop());
       cameraActive = false;
     }
+    // reset input
+    target.value = '';
   }
 
-  function processUploadedImage(sourceImg: HTMLImageElement) {
-    if (!canvasElement) return;
+  function onPointerDown(e: MouseEvent | TouchEvent) {
+    if (!editMode) return;
+    isDragging = true;
+    const clientX = 'touches' in e ? e.touches[0].clientX : (e as MouseEvent).clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : (e as MouseEvent).clientY;
+    startX = clientX - offsetX;
+    startY = clientY - offsetY;
+  }
+  
+  function onPointerMove(e: MouseEvent | TouchEvent) {
+    if (!isDragging || !editMode) return;
+    const clientX = 'touches' in e ? e.touches[0].clientX : (e as MouseEvent).clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : (e as MouseEvent).clientY;
+    offsetX = clientX - startX;
+    offsetY = clientY - startY;
+  }
+  
+  function onPointerUp() {
+    isDragging = false;
+  }
 
+  function generateFinalImage() {
+    if (!currentImageSrc || !canvasElement) return;
+    
     const size = 1000;
     canvasElement.width = size;
     canvasElement.height = size;
-    
     const ctx = canvasElement.getContext('2d');
     if (!ctx) return;
-
-    // Crop to square
-    const imgAspectRatio = sourceImg.width / sourceImg.height;
-    let sx = 0, sy = 0, sw = sourceImg.width, sh = sourceImg.height;
     
-    if (imgAspectRatio > 1) {
-      sw = sourceImg.height;
-      sx = (sourceImg.width - sw) / 2;
-    } else if (imgAspectRatio < 1) {
-      sh = sourceImg.width;
-      sy = (sourceImg.height - sh) / 2;
-    }
-    
-    // Draw cropped image (not mirrored)
-    ctx.drawImage(sourceImg, sx, sy, sw, sh, 0, 0, size, size);
+    const img = new Image();
+    img.onload = () => {
+      // Calculate drawing dimensions to match the CSS object-fit: cover logic
+      const containerW = previewWidth || 400;
+      
+      const canvasBaseScale = Math.max(size / img.width, size / img.height);
+      const drawWidth = img.width * canvasBaseScale * scale;
+      const drawHeight = img.height * canvasBaseScale * scale;
+      
+      const cx = size / 2;
+      const cy = size / 2;
+      const multiplier = size / containerW;
+      
+      const finalX = cx - (drawWidth / 2) + (offsetX * multiplier);
+      const finalY = cy - (drawHeight / 2) + (offsetY * multiplier);
+      
+      // Draw user image
+      ctx.drawImage(img, finalX, finalY, drawWidth, drawHeight);
 
-    const overlayImg = new Image();
-    overlayImg.crossOrigin = "anonymous";
-    overlayImg.onload = () => {
-      ctx.drawImage(overlayImg, 0, 0, size, size);
-      resultImage = canvasElement.toDataURL('image/png');
+      // Draw overlay
+      const overlayImg = new Image();
+      overlayImg.crossOrigin = "anonymous";
+      overlayImg.onload = () => {
+        ctx.drawImage(overlayImg, 0, 0, size, size);
+        resultImage = canvasElement.toDataURL('image/png');
+        editMode = false;
+      };
+      overlayImg.src = selectedTwibbon;
     };
-    overlayImg.src = selectedTwibbon;
+    img.src = currentImageSrc;
+  }
+
+  function retakePhoto() {
+    resultImage = null;
+    editMode = false;
+    currentImageSrc = null;
+    startCamera();
   }
 </script>
 
@@ -147,7 +169,6 @@
   <Navbar />
   
   <div class="layout-container">
-    <!-- Header Section -->
     <div class="header-section">
       <div class="header-text">
         <h1 class="title-outline">Evani</h1>
@@ -155,47 +176,71 @@
       </div>
       <div class="divider"></div>
       <p class="description">
-        Tunjukkan dukunganmu! Ambil foto langsung dari kameramu dan gunakan Twibbon resmi Evani Community.
+        Tunjukkan dukunganmu! Ambil foto dari kamera atau unggah dari galeri.
       </p>
     </div>
     
-    <!-- Preview Section -->
     <div class="right-panel">
-      <div class="preview-container">
-        <!-- Live Video View -->
+      <!-- Bind clientWidth to previewWidth so we can map transforms accurately -->
+      <div class="preview-container" bind:clientWidth={previewWidth}>
         <div class="camera-wrapper" class:hidden={resultImage !== null}>
-          <!-- svelte-ignore a11y_media_has_caption -->
-          <video bind:this={videoElement} class="video-feed" playsinline></video>
           
-          {#if cameraActive}
-            <!-- Overlay shown during live preview -->
+          <!-- svelte-ignore a11y_media_has_caption -->
+          <video 
+            bind:this={videoElement} 
+            class="video-feed" 
+            class:hidden={!cameraActive || editMode} 
+            playsinline
+          ></video>
+
+          {#if editMode && currentImageSrc}
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div 
+              class="edit-layer"
+              on:mousedown={onPointerDown}
+              on:mousemove={onPointerMove}
+              on:mouseup={onPointerUp}
+              on:mouseleave={onPointerUp}
+              on:touchstart|preventDefault={onPointerDown}
+              on:touchmove|preventDefault={onPointerMove}
+              on:touchend|preventDefault={onPointerUp}
+            >
+              <img 
+                src={currentImageSrc} 
+                alt="Edit" 
+                class="edit-image"
+                style="transform: translate({offsetX}px, {offsetY}px) scale({scale});"
+              />
+            </div>
+            <!-- Overlay remains on top, pointer-events-none so touches pass through -->
             <img src={selectedTwibbon} alt="Twibbon Overlay" class="overlay" />
+          
+          {:else if cameraActive}
+            <img src={selectedTwibbon} alt="Twibbon Overlay" class="overlay" />
+          
           {:else}
             <div class="placeholder-overlay">
-              <p>Kamera belum aktif</p>
+              <p>Mulai Kamera atau Pilih Galeri</p>
             </div>
           {/if}
+
         </div>
         
-        <!-- Result View -->
         {#if resultImage}
           <div class="result-wrapper">
             <img src={resultImage} alt="Hasil Twibbon" class="result-image" />
           </div>
         {/if}
         
-        <!-- Hidden Canvas for processing -->
         <canvas bind:this={canvasElement} class="hidden"></canvas>
       </div>
       
-      <!-- Decorative Ornaments -->
       <div class="ornament ornament-1"></div>
       <div class="ornament ornament-2"></div>
     </div>
 
-    <!-- Controls Section -->
     <div class="card">
-      <div class="twibbon-selector">
+      <div class="twibbon-selector" class:hidden={editMode || resultImage}>
         <p class="selector-title">Pilih Bingkai:</p>
         <div class="selector-options">
           {#each twibbons as t}
@@ -209,27 +254,59 @@
         </div>
       </div>
       
-      <div class="actions">
-        {#if !cameraActive && !resultImage}
-          <button class="btn-primary main-btn" on:click={startCamera}>
-            Nyalakan Kamera
-          </button>
-          <button class="btn-outline main-btn" style="margin-top: 8px;" on:click={() => fileInput.click()}>
-            Pilih dari Galeri
-          </button>
-        {:else if cameraActive}
-          <button class="btn-primary main-btn" on:click={takePhoto}>
-            Ambil Foto / Jepret!
-          </button>
-        {:else if resultImage}
-          <a href={resultImage} download="Evani-Twibbon.png" class="btn-primary main-btn download-btn">
-            Download Hasil
-          </a>
-          <button class="btn-outline main-btn" style="margin-top: 8px;" on:click={retakePhoto}>
-            Ulangi Foto
-          </button>
-        {/if}
-      </div>
+      {#if editMode}
+        <!-- Edit Controls -->
+        <div class="edit-controls">
+          <p class="text-sm mb-2" style="color: #666; font-size: 0.9rem; text-align: center; margin-bottom: 8px;">
+            Geser gambar untuk menyesuaikan posisi.<br/>Gunakan slider di bawah untuk memperbesar.
+          </p>
+          <div class="slider-container">
+            <label for="zoomSlider" class="zoom-icon">🔍</label>
+            <input 
+              id="zoomSlider" 
+              type="range" 
+              min="1" 
+              max="4" 
+              step="0.05" 
+              bind:value={scale} 
+              class="zoom-slider"
+            />
+          </div>
+          <div class="actions" style="margin-top: 16px;">
+            <button class="btn-primary main-btn" style="background-color: #25D366; box-shadow: 0 4px 14px rgba(37, 211, 102, 0.3);" on:click={generateFinalImage}>
+              Selesai & Terapkan
+            </button>
+            <button class="btn-outline main-btn" style="margin-top: 8px;" on:click={retakePhoto}>
+              Batal
+            </button>
+          </div>
+        </div>
+      {:else}
+        <div class="actions">
+          {#if !cameraActive && !resultImage}
+            <button class="btn-primary main-btn" on:click={startCamera}>
+              Nyalakan Kamera
+            </button>
+            <button class="btn-outline main-btn" style="margin-top: 8px;" on:click={() => fileInput.click()}>
+              Pilih dari Galeri
+            </button>
+          {:else if cameraActive}
+            <button class="btn-primary main-btn" on:click={takePhoto}>
+              Ambil Foto / Jepret!
+            </button>
+            <button class="btn-outline main-btn" style="margin-top: 8px;" on:click={() => fileInput.click()}>
+              Atau Pilih Galeri
+            </button>
+          {:else if resultImage}
+            <a href={resultImage} download="Evani-Twibbon.png" class="btn-primary main-btn download-btn">
+              Download Hasil
+            </a>
+            <button class="btn-outline main-btn" style="margin-top: 8px;" on:click={retakePhoto}>
+              Ulangi Foto
+            </button>
+          {/if}
+        </div>
+      {/if}
     </div>
   </div>
   
@@ -238,7 +315,7 @@
 
 <style>
   main {
-    padding-top: 100px; /* Space for navbar */
+    padding-top: 100px;
     flex: 1;
     display: flex;
     align-items: center;
@@ -257,7 +334,6 @@
     min-height: calc(100vh - 120px);
   }
 
-  /* Header Section */
   .header-section {
     text-align: center;
     display: flex;
@@ -266,9 +342,7 @@
     width: 100%;
   }
 
-  .header-text {
-    margin-bottom: 16px;
-  }
+  .header-text { margin-bottom: 16px; }
 
   .title-outline {
     font-size: 3.5rem;
@@ -288,20 +362,12 @@
   }
 
   .divider {
-    width: 60px;
-    height: 4px;
-    background-color: var(--primary-red);
-    margin-bottom: 16px;
-    border-radius: 2px;
+    width: 60px; height: 4px; background-color: var(--primary-red);
+    margin-bottom: 16px; border-radius: 2px;
   }
 
-  .description {
-    font-size: 1.05rem;
-    color: #666;
-    line-height: 1.5;
-  }
+  .description { font-size: 1.05rem; color: #666; line-height: 1.5; }
 
-  /* Card / Controls (Glassmorphism) */
   .card {
     background: rgba(255, 255, 255, 0.5);
     backdrop-filter: blur(16px);
@@ -315,164 +381,117 @@
     z-index: 10;
   }
 
-  /* Twibbon Selector */
-  .twibbon-selector {
-    margin-bottom: 24px;
-    text-align: center;
-  }
-  
-  .selector-title {
-    font-size: 0.9rem;
-    font-weight: 600;
-    margin-bottom: 12px;
-    color: #666;
-  }
-
-  .selector-options {
-    display: flex;
-    justify-content: center;
-    gap: 16px;
-  }
+  .twibbon-selector { margin-bottom: 24px; text-align: center; }
+  .selector-title { font-size: 0.9rem; font-weight: 600; margin-bottom: 12px; color: #666; }
+  .selector-options { display: flex; justify-content: center; gap: 16px; }
 
   .twibbon-option {
-    width: 60px;
-    height: 60px;
-    border-radius: 12px;
-    overflow: hidden;
-    border: 3px solid transparent;
-    padding: 0;
-    background: rgba(255, 255, 255, 0.5);
+    width: 60px; height: 60px; border-radius: 12px; overflow: hidden;
+    border: 3px solid transparent; padding: 0; background: rgba(255, 255, 255, 0.5);
     transition: transform 0.2s, border-color 0.2s;
   }
+  .twibbon-option img { width: 100%; height: 100%; object-fit: cover; }
+  .twibbon-option.active { border-color: var(--primary-red); transform: scale(1.1); }
+  .twibbon-option:hover { transform: scale(1.05); }
 
-  .twibbon-option img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
+  .actions { display: flex; flex-direction: column; gap: 12px; }
+  .main-btn { width: 100%; padding: 16px; font-size: 1.1rem; text-align: center; }
+  .download-btn { display: block; text-decoration: none; box-sizing: border-box; }
 
-  .twibbon-option.active {
-    border-color: var(--primary-red);
-    transform: scale(1.1);
-  }
-
-  .twibbon-option:hover {
-    transform: scale(1.05);
-  }
-
-  .actions {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .main-btn {
-    width: 100%;
-    padding: 16px;
-    font-size: 1.1rem;
-    text-align: center;
-  }
-  
-  .download-btn {
-    display: block;
-    text-decoration: none;
-    box-sizing: border-box;
-  }
-
-  /* Right Panel / Preview Section */
   .right-panel {
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
-    padding: 20px 0;
+    position: relative; display: flex; align-items: center; justify-content: center;
+    width: 100%; padding: 20px 0;
   }
 
   .preview-container {
-    position: relative;
-    width: 100%;
-    max-width: 400px;
-    aspect-ratio: 1 / 1;
-    border-radius: var(--radius-box);
-    background-color: var(--secondary-pink);
-    box-shadow: 0 0 40px rgba(205, 139, 142, 0.4);
-    z-index: 5;
+    position: relative; width: 100%; max-width: 400px; aspect-ratio: 1 / 1;
+    border-radius: var(--radius-box); background-color: var(--secondary-pink);
+    box-shadow: 0 0 40px rgba(205, 139, 142, 0.4); z-index: 5;
+    overflow: hidden; /* Important for pan boundary */
   }
 
   .camera-wrapper, .result-wrapper {
-    width: 100%;
-    height: 100%;
-    position: relative;
-    border-radius: var(--radius-box);
-    overflow: hidden;
+    width: 100%; height: 100%; position: relative;
+    border-radius: var(--radius-box); overflow: hidden;
   }
 
   .video-feed {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    transform: scaleX(-1); /* Mirror effect for webcam */
+    width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1);
   }
 
   .overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-    z-index: 10;
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none; z-index: 10;
   }
 
   .placeholder-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(0,0,0,0.1);
-    color: white;
-    font-weight: bold;
-    font-size: 1.2rem;
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.1); color: white; font-weight: bold; font-size: 1.2rem;
   }
 
   .result-image {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    border-radius: var(--radius-box);
+    width: 100%; height: 100%; object-fit: contain; border-radius: var(--radius-box);
   }
 
-  .hidden {
-    display: none;
-  }
+  .hidden { display: none !important; }
 
-  /* Ornaments */
   .ornament {
-    position: absolute;
-    border-radius: 50%;
-    background-color: var(--primary-red);
-    opacity: 0.1;
-    z-index: 1;
+    position: absolute; border-radius: 50%; background-color: var(--primary-red);
+    opacity: 0.1; z-index: 1;
   }
-
-  .ornament-1 {
-    width: 150px;
-    height: 150px;
-    top: -10px;
-    right: -20px;
-  }
-
+  .ornament-1 { width: 150px; height: 150px; top: -10px; right: -20px; }
   .ornament-2 {
-    width: 200px;
-    height: 200px;
-    bottom: -30px;
-    left: -30px;
-    background-color: var(--secondary-pink);
-    opacity: 0.2;
+    width: 200px; height: 200px; bottom: -30px; left: -30px;
+    background-color: var(--secondary-pink); opacity: 0.2;
+  }
+
+  /* Edit Layer specific */
+  .edit-layer {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    cursor: grab;
+    z-index: 5; /* below overlay */
+    background: #e9e9e9; /* dark background while editing looks nice */
+  }
+  .edit-layer:active { cursor: grabbing; }
+
+  .edit-image {
+    width: 100%; height: 100%; object-fit: cover;
+    pointer-events: none; /* Let the container handle drag events */
+    transform-origin: center;
+  }
+
+  /* Slider */
+  .slider-container {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: rgba(255, 255, 255, 0.8);
+    padding: 12px 16px;
+    border-radius: var(--radius-pill);
+    box-shadow: inset 0 2px 8px rgba(0,0,0,0.05);
+  }
+
+  .zoom-icon { font-size: 1.2rem; }
+  
+  .zoom-slider {
+    flex: 1;
+    height: 6px;
+    -webkit-appearance: none;
+    background: #e0e0e0;
+    border-radius: 4px;
+    outline: none;
+  }
+  
+  .zoom-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--primary-red);
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(186, 28, 34, 0.4);
   }
 </style>
