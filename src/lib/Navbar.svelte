@@ -5,7 +5,7 @@
 <nav class="navbar">
   <div class="navbar-content">
     <div class="logo">
-      <span class="logo-text">Evani</span>
+      <img src="/logo.png" alt="Evani Logo" class="logo-img" />
     </div>
   </div>
 </nav>
@@ -39,11 +39,9 @@
     align-items: center;
   }
 
-  .logo-text {
-    font-family: 'Montserrat', sans-serif;
-    font-size: 1.5rem;
-    font-weight: 800;
-    color: var(--primary-red);
-    letter-spacing: -0.5px;
+  .logo-img {
+    height: 36px;
+    width: auto;
+    object-fit: contain;
   }
 </style>
