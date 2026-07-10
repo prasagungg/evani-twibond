@@ -84,6 +84,31 @@
     resultImage = null;
     startCamera();
   }
+
+  async function shareToSosmed() {
+    if (!resultImage) return;
+    
+    try {
+      // Convert base64 Data URL to Blob
+      const res = await fetch(resultImage);
+      const blob = await res.blob();
+      
+      const file = new File([blob], 'Evani-Twibbon.png', { type: 'image/png' });
+      
+      // Check if Web Share API is supported for files
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          title: 'Evani Twibbon',
+          text: 'Saya mendukung Evani Community!',
+          files: [file]
+        });
+      } else {
+        alert("Browser Anda tidak mendukung fitur bagikan gambar langsung (Web Share API). Silakan 'Download Hasil' dan bagikan secara manual.");
+      }
+    } catch (err) {
+      console.error("Gagal membagikan:", err);
+    }
+  }
 </script>
 
 <main>
@@ -165,7 +190,10 @@
           <a href={resultImage} download="Evani-Twibbon.png" class="btn-primary main-btn download-btn">
             Download Hasil
           </a>
-          <button class="btn-outline main-btn mt-3" on:click={retakePhoto}>
+          <button class="btn-primary main-btn" style="background-color: #2D2D2D; box-shadow: 0 4px 14px rgba(45, 45, 45, 0.3);" on:click={shareToSosmed}>
+            Bagikan ke Sosmed
+          </button>
+          <button class="btn-outline main-btn" style="margin-top: 8px;" on:click={retakePhoto}>
             Ulangi Foto
           </button>
         {/if}
